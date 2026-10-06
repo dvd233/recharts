@@ -1,0 +1,285 @@
+name: Recharts categorical accessor validation
+
+on:
+  push:
+    branches:
+      - validation/category-axis-accessors-20261006
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recharts-accessor-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  original-pipeline:
+    name: Original pipeline (${{ matrix.revision }})
+    if: >-
+      ${{ github.repository == 'dvd233/recharts' &&
+          github.repository_id == '1407946170' &&
+          github.event.repository.owner.id == 111864431 &&
+          github.ref == 'refs/heads/validation/category-axis-accessors-20261006' &&
+          github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        revision: [baseline, candidate]
+    env:
+      BASE_SHA: 6b4b00f2e78076c64561941543bdb0263df79f42
+      CANDIDATE_SHA: b6a50d0747bad1a1a52526e4f2792021c72fd371
+      VARIANT: ${{ matrix.revision }}
+      VALIDATION_COMMIT: ${{ github.sha }}
+      EXPECTED_REPOSITORY: dvd233/recharts
+    steps:
+      - name: Verify the authorized fork identity
+        id: identity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['GITHUB_EVENT_PATH']) as source:
+              event = json.load(source)
+          repository = event['repository']
+          assert os.environ['GITHUB_REPOSITORY'] == 'dvd233/recharts'
+          assert os.environ['GITHUB_REF'] == 'refs/heads/validation/category-axis-accessors-20261006'
+          assert os.environ['GITHUB_EVENT_NAME'] == 'push'
+          assert repository['full_name'] == 'dvd233/recharts'
+          assert repository['id'] == 1407946170
+          assert repository['owner']['id'] == 111864431
+          PY
+
+      - name: Check out the exact baseline or candidate source commit
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.revision == 'baseline' && '6b4b00f2e78076c64561941543bdb0263df79f42' || 'b6a50d0747bad1a1a52526e4f2792021c72fd371' }}
+          fetch-depth: 3
+          persist-credentials: false
+
+      - name: Verify and record immutable source inputs
+        id: source
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/recharts-validation"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          base = os.environ['BASE_SHA']
+          head = git('rev-parse', 'HEAD')
+          expected = {
+              'src/util/ChartUtils.ts': '4612dccbda21ddf8dfba477928ce4f4f591ff1a68f245d0f7c6d769f816f6e18',
+              'test/util/ChartUtils/getCateCoordinateOfLine.accessors.spec.ts': '9a5835b7bb047366d2f27553f947588a2d283b620a9d7f652f330168b2c30e55',
+              'test/chart/CategoricalAccessors.spec.tsx': '3714c80d3556598987c3f2871657658c32775db9457dc6216b66eed3f08b6fb8',
+          }
+          changed = git('diff', '--name-only', base, head).splitlines()
+          if os.environ['VARIANT'] == 'baseline':
+              assert head == base
+              assert not changed
+              assert git('rev-parse', 'HEAD^{tree}') == 'a5f7219425fc5852ebfa8fd323bed29f0361f532'
+          else:
+              assert head == os.environ['CANDIDATE_SHA']
+              assert set(changed) == set(expected), changed
+              for name, digest in expected.items():
+                  assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == digest, name
+          report = {
+              'variant': os.environ['VARIANT'], 'head': head,
+              'tree': git('rev-parse', 'HEAD^{tree}'), 'base': base, 'changed': changed,
+              'node_version_file': pathlib.Path('.nvmrc').read_text().strip(),
+              'lock_sha256': hashlib.sha256(pathlib.Path('package-lock.json').read_bytes()).hexdigest(),
+          }
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'recharts-validation/source.json'
+          path.write_text(json.dumps(report, indent=2))
+          print(json.dumps(report, indent=2))
+          PY
+
+      - name: Use the repository's Node version
+        id: node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install the unchanged original lockfile
+        id: install
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          node --version | tee "$RUNNER_TEMP/recharts-validation/node.txt"
+          npm --version | tee "$RUNNER_TEMP/recharts-validation/npm.txt"
+          npm ci 2>&1 | tee "$RUNNER_TEMP/recharts-validation/npm-ci.log"
+
+      - name: Original build including its automatic prebuild
+        id: build
+        if: ${{ steps.install.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee "$RUNNER_TEMP/recharts-validation/build.log"
+
+      - name: Original complete unit command
+        id: unit
+        if: ${{ steps.install.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test 2>&1 | tee "$RUNNER_TEMP/recharts-validation/unit.log"
+
+      - name: Original complete type checks
+        id: types
+        if: ${{ steps.install.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run check-types 2>&1 | tee "$RUNNER_TEMP/recharts-validation/types.log"
+
+      - name: Original complete lint command
+        id: lint
+        if: ${{ steps.install.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee "$RUNNER_TEMP/recharts-validation/lint.log"
+
+      - name: Confirm commands did not rewrite tracked inputs
+        id: immutable
+        if: ${{ always() && steps.source.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          git diff --exit-code HEAD 2>&1 | tee "$RUNNER_TEMP/recharts-validation/tracked-input-diff.log"
+
+      - name: Record every outcome, including failures and skipped stages
+        if: ${{ always() }}
+        shell: bash
+        env:
+          IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          SOURCE_OUTCOME: ${{ steps.source.outcome }}
+          NODE_OUTCOME: ${{ steps.node.outcome }}
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          TYPES_OUTCOME: ${{ steps.types.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          IMMUTABLE_OUTCOME: ${{ steps.immutable.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          keys = ['IDENTITY', 'CHECKOUT', 'SOURCE', 'NODE', 'INSTALL', 'BUILD', 'UNIT', 'TYPES', 'LINT', 'IMMUTABLE']
+          outcomes = {key.lower(): os.environ.get(key + '_OUTCOME', 'unknown') for key in keys}
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'recharts-validation'
+          root.mkdir(exist_ok=True)
+          report = {'variant': os.environ['VARIANT'], 'validation_commit': os.environ['VALIDATION_COMMIT'], 'outcomes': outcomes}
+          (root / 'outcomes.json').write_text(json.dumps(report, indent=2))
+          print(json.dumps(report, indent=2))
+          PY
+
+      - name: Preserve baseline and candidate evidence even when a command fails
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: recharts-accessor-${{ matrix.revision }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/recharts-validation/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Fail unless every required stage succeeded
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'recharts-validation/outcomes.json'
+          report = json.loads(path.read_text())
+          failed = {name: result for name, result in report['outcomes'].items() if result != 'success'}
+          if failed:
+              print(json.dumps(failed, indent=2))
+              sys.exit(1)
+          print('All original pipeline stages passed for ' + report['variant'])
+          PY
+
+  reproduction-demo:
+    name: Verify the standalone released-version reproduction
+    if: >-
+      ${{ github.repository == 'dvd233/recharts' &&
+          github.repository_id == '1407946170' &&
+          github.event.repository.owner.id == 111864431 &&
+          github.ref == 'refs/heads/validation/category-axis-accessors-20261006' &&
+          github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Verify the authorized fork identity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['GITHUB_EVENT_PATH']) as source:
+              repository = json.load(source)['repository']
+          assert os.environ['GITHUB_REPOSITORY'] == 'dvd233/recharts'
+          assert os.environ['GITHUB_REF'] == 'refs/heads/validation/category-axis-accessors-20261006'
+          assert os.environ['GITHUB_EVENT_NAME'] == 'push'
+          assert repository['id'] == 1407946170
+          assert repository['owner']['id'] == 111864431
+          PY
+
+      - name: Check out the independent reproduction branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ffb5d0bb4b107d2eec729377b5b03fb1e902c6e8
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Pin the complete reproduction tree and record its commit
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/recharts-demo-validation"
+          test "$(git rev-parse HEAD)" = ffb5d0bb4b107d2eec729377b5b03fb1e902c6e8
+          test "$(git rev-parse 'HEAD^{tree}')" = 198cc5204f4c20e094e06b5a792becc512a35ba4
+          git rev-parse HEAD 'HEAD^{tree}' | tee "$RUNNER_TEMP/recharts-demo-validation/source.txt"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.x
+
+      - name: Fresh install from the reproduction's lockfile
+        shell: bash
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee "$RUNNER_TEMP/recharts-demo-validation/npm-ci.log"
+
+      - name: Build the standalone app without starting a server
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee "$RUNNER_TEMP/recharts-demo-validation/build.log"
+
+      - name: Confirm the bug in the unchanged released version
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run reproduce 2>&1 | tee "$RUNNER_TEMP/recharts-demo-validation/reproduce.log"
+
+      - name: Check that the demo lockfile and source were not rewritten
+        shell: bash
+        run: |
+          set -o pipefail
+          git diff --exit-code HEAD 2>&1 | tee "$RUNNER_TEMP/recharts-demo-validation/tracked-input-diff.log"
+
+      - name: Preserve the reproduction evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: recharts-accessor-demo-${{ github.run_id }}
+          path: ${{ runner.temp }}/recharts-demo-validation/
+          retention-days: 7
+          if-no-files-found: error
