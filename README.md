@@ -1,99 +1,40 @@
-# Recharts
+# Recharts categorical accessor reproduction
 
-[![storybook](https://raw.githubusercontent.com/storybooks/brand/master/badge/badge-storybook.svg)](https://recharts.github.io/en-US/storybook)
-[![Build and test](https://github.com/recharts/recharts/actions/workflows/ci.yml/badge.svg)](https://github.com/recharts/recharts/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/recharts/recharts/graph/badge.svg?token=Bn6L2hrl8T)](https://codecov.io/gh/recharts/recharts)
-[![Flakiness VR tests](https://img.shields.io/endpoint?url=https%3A%2F%2Fflakiness.io%2Fapi%2Fbadge%3Finput%3D%257B%2522badgeToken%2522%253A%2522badge-5fn66uzUBAciS5rtQZ2XyQ%2522%257D)](https://flakiness.io/recharts/recharts)
-[![npm version](https://badge.fury.io/js/recharts.svg)](http://badge.fury.io/js/recharts)
-[![npm downloads](https://img.shields.io/npm/dm/recharts.svg?style=flat-square)](https://www.npmjs.com/package/recharts)
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](/LICENSE)
+This is a standalone bug reproduction for unchanged Recharts 3.10.1 and React/React DOM 18.3.1. It is not the fix branch.
 
-## Introduction
+All four charts use categories `A, B, A`. Expected: three points, with the first and third aligned at category A. Actual: the flat string key works; the nested path, function and numeric-zero key omit the third point.
 
-Recharts is a **Redefined** chart library built with [React](https://react.dev/) and [D3](https://d3js.org).
+## Install and view
 
-The main purpose of this library is to help you to write charts in React applications without any pain. Main principles of Recharts are:
-
-1. **Simply** deploy with React components.
-2. **Native** SVG support, lightweight with minimal dependencies.
-3. **Declarative** components.
-
-Documentation at [recharts.github.io](https://recharts.github.io) and our [storybook](https://recharts.github.io/en-US/storybook)
-
-Also see [the wiki](https://github.com/recharts/recharts/wiki).
-
-All development is done on the `main` branch. The current latest release and storybook documentation reflects what is on the `release` branch.
-
-## Examples
-
-```jsx
-<LineChart width={400} height={400} data={data}>
-  <XAxis dataKey="name" />
-  <Tooltip />
-  <CartesianGrid stroke="#f5f5f5" />
-  <Line type="monotone" dataKey="uv" stroke="#ff7300" />
-  <Line type="monotone" dataKey="pv" stroke="#387908" />
-</LineChart>
-```
-
-All the components of Recharts are clearly separated. The LineChart is composed of x axis, tooltip, grid, and line items, and each of them is an independent React Component. The clear separation and composition of components is one of the principle Recharts follows.
-
-## Installation
-
-### npm
-
-NPM is the easiest and fastest way to get started using Recharts. It is also the recommended installation method when building single-page applications (SPAs). It pairs nicely with a CommonJS module bundler such as Webpack.
+Use Node.js 24 and npm 11. Clone the standalone reproduction branch:
 
 ```sh
-# latest stable
-$ npm install recharts react-is
+git clone --single-branch --branch repro/category-accessors-20261006 https://github.com/dvd233/recharts.git recharts-accessor-repro
+cd recharts-accessor-repro
+npm ci
+npm run dev
 ```
 
-`react-is` needs to match the version of your installed `react` package.
+Open the URL printed by Vite. Compare the four charts. No network API, account, key or backend is required.
 
-### Deno
-
-Deno is a drop-in replacement for npm, so Recharts installs the same way:
+To build the static app without starting a server:
 
 ```sh
-$ deno add recharts react-is
+npm run build
 ```
 
-### umd
+## Reproduce without a browser
 
-The UMD build is also available on unpkg.com:
-
-```html
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
-<script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+```sh
+npm run reproduce
 ```
 
-Then you can find the library on `window.Recharts`.
+The script renders the same `Chart` component and data used by the app through jsdom. It prints SVG paths and dot coordinates, then asserts the observed bug: the flat-key control has x coordinates `[65, 495, 65]`, while each other accessor has only `[65, 495]`. Exit zero means the known 3.10.1 defect was reproduced, not that the behavior is correct. All charts still show the same A/B axis labels.
 
-## Contributing
+The exact dependency versions are locked. `react-is` is pinned to 18.3.1 to match React and React DOM.
 
-Recharts is open source. If you want to contribute to the project, please read the [CONTRIBUTING.md](/CONTRIBUTING.md)
-to understand how to contribute to the project and [DEVELOPING.md](/DEVELOPING.md) to set up your development
-environment.
+## Verification limits
 
-## Thanks
+The reproduction was run automatically in jsdom, and the static Vite build was checked. No real-browser rendering, interaction or screenshot validation is claimed. No development server was started by the agent.
 
-<a href="https://www.chromatic.com/"><img src="https://user-images.githubusercontent.com/321738/84662277-e3db4f80-af1b-11ea-88f5-91d67a5e59f6.png" width="153" height="30" alt="Chromatic" /></a>
-
-Thanks to [Chromatic](https://www.chromatic.com/) for providing the visual testing platform that helps us review UI changes and catch visual regressions.
-
-[![JetBrains logo.](https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg)](https://jb.gg/OpenSourceSupport)
-
-Thanks to JetBrains for providing OSS development license for their IDEs.
-
-Browser testing via
-
-[![TestMu AI](www/public/assets/testmu-logo-black.svg)](https://www.testmuai.com/?utm_medium=sponsor&utm_source=recharts)
-
-## License
-
-[MIT](http://opensource.org/licenses/MIT)
-
-Copyright (c) 2015-2026 Recharts Group.
+Prepared by an AI coding agent. No human review is claimed.
